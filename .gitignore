@@ -10,6 +10,7 @@
 .snapshots/
 #Testing Output folder
 .output/
+/homeworks/
 #Extension App-file
 *.app
 #Rapid Application Development File
