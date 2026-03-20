@@ -1,9 +1,12 @@
 .386
+
 stack_seg segment para stack use16
-db 65500 dup(?)
+    db 65500 dup(?)
 stack_seg ends
 
 data_seg segment para public use16
+
+
 crc16 	dw 0000h, 1021h, 2042h, 3063h, 4084h, 50A5h, 60C6h, 70E7h
 		dw 8108h, 9129h, 0A14Ah, 0B16Bh, 0C18Ch, 0D1ADh, 0E1CEh, 0F1EFh
 		dw 1231h, 0210h, 3273h, 2252h, 52B5h, 4294h, 72F7h, 62D6h
@@ -37,84 +40,139 @@ crc16 	dw 0000h, 1021h, 2042h, 3063h, 4084h, 50A5h, 60C6h, 70E7h
 		dw 0EF1Fh, 0FF3Eh, 0CF5Dh, 0DF7Ch, 0AF9Bh, 0BFBAh, 8FD9h, 9FF8h
 		dw 6E17h, 7E36h, 4E55h, 5E74h, 2E93h, 3EB2h, 0ED1h, 1EF0h
 
-str_max db 254           
-str_len db ?           
-str_str db 256 dup(?)  
-new_line db 0ah,0dh,'$'  
+		
+str_max db 254
+str_len db ?
+str_str db 256 dup(?)
+
+hex_buf  db '0000','$'
+new_line db 0Ah,0Dh,'$'
+
 data_seg ends
 
 code_seg segment para use16
-assume cs:code_seg,ss:stack_seg,ds:data_seg
+assume cs:code_seg, ds:data_seg, ss:stack_seg
+
+read_string proc
+    mov ah, 0Ah
+    mov dx, offset str_max
+    int 21h
+    ret
+read_string endp
+
+print_string proc
+    mov ah, 09h
+    int 21h
+    ret
+print_string endp
+
+print_newline proc
+    mov dx, offset new_line
+    call print_string
+    ret
+print_newline endp
+
+crc16_calc proc
+    push ax
+    push si
+    push di
+
+    mov dx, 0FFFFh
+
+crc_loop:
+    mov al, [bx]
+    inc bx
+
+    xor ah, ah
+
+    mov si, dx
+    shr si, 8
+
+    xor si, ax
+    and si, 00FFh
+
+    shl dx, 8
+
+    shl si, 1
+    mov di, [crc16 + si]
+    shr si, 1
+
+    xor dx, di
+
+    loop crc_loop
+
+    pop di
+    pop si
+    pop ax
+    ret
+crc16_calc endp
+
+word_to_hex proc
+    push ax
+    push cx
+    push dx
+
+    mov cx, 4
+    mov di, offset hex_buf
+
+hex_conv:
+    rol bx, 4
+
+    mov al, bl
+    and al, 0Fh
+
+    cmp al, 10
+    jl  digit
+
+    add al, 55
+    jmp store
+
+digit:
+    add al, 48
+
+store:
+    mov [di], al
+    inc di
+
+    loop hex_conv
+
+    pop dx
+    pop cx
+    pop ax
+    ret
+word_to_hex endp
+
+print_hex proc
+    mov dx, offset hex_buf
+    call print_string
+    ret
+print_hex endp
 
 program_start:
-	mov ax, data_seg
-	mov ds, ax
-	mov ax, stack_seg
-	mov ss, ax
-	
-	mov ah, 0ah
-	mov dx, offset str_max
-	int 21h
-	
-	mov ah, 09h
-    mov dx, offset new_line
+
+    mov ax, data_seg
+    mov ds, ax
+
+    mov ax, stack_seg
+    mov ss, ax
+
+    call read_string
+    call print_newline
+
+    lea bx, str_str
+    xor ch, ch
+    mov cl, str_len
+
+    call crc16_calc
+
+    mov bx, dx
+    call word_to_hex
+
+    call print_hex
+    call print_newline
+
+    mov ax, 4C00h
     int 21h
-	
-	lea bx, str_str
-	xor ch,ch
-	mov cl, byte ptr[str_len]
 
-compute_crc:
-    mov dx, 0FFFFh        
-	
-crc_computation_loop:
-	
-    mov al,[bx]          
-    inc bx               
-
-	xor ah,ah
-    mov si,dx
-    shr si,8             
-
-    xor si,ax            
-    and si,00FFh         
-
-    shl dx,8             
-
-	shl si, 1
-	mov di,word ptr [crc16+si]
-	shr si, 1
-
-    xor dx,di            
-
-    loop crc_computation_loop
-	
-show_hex_result:
-    mov bx, dx            
-    mov cx, 4             
-    
-hex_print_loop:
-    rol bx, 4             
-    mov al, bl           
-    and al, 0Fh           
-    
-    cmp al, 10
-    jl  numeric
-    add al, 55            
-    jmp alpha
-numeric:
-    add al, 48            
-alpha:
-    mov dl, al
-    mov ah, 02h
-    int 21h
-    
-    loop hex_print_loop
-    
-program_exit:
-	mov ax, 4c00h
-	int 21h
-	
 code_seg ends
-
 end program_start
