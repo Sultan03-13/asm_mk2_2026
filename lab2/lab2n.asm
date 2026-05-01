@@ -37,7 +37,7 @@ data segment para public
     tmp_num2        db 10 dup(?)
     tmp_len2        db ?
     
-    ; ----- сообщения для пользователя -----
+  
     msg_base_prompt db "Select base (d/h): $"
     msg_base_set    db "Base set to $"
     msg_expr_prompt db "Enter expression: $"
@@ -63,12 +63,14 @@ data segment para public
     normal_result   dw ?
     
     work_buffer     db 10 dup(?)
+    
+    error_code      db 0            ; глобальный код ошибки
 data ends
 
 code segment para public use16
 assume cs:code, ds:data, ss:stack
 
-; ===== вывод символа =====
+
 _disp_char:
     push bp
     mov bp, sp
@@ -79,7 +81,7 @@ _disp_char:
     pop bp
     ret
 
-; ===== вывод строки с '$'-терминатором =====
+
 _disp_str_dollar:
     push bp
     mov bp, sp
@@ -89,7 +91,7 @@ _disp_str_dollar:
     pop bp
     ret
 
-; ===== вывод строки с 0-терминатором (используется для буферов) =====
+
 _disp_str_zero:
     push bp
     mov bp, sp
@@ -109,7 +111,7 @@ _dsz_done:
     pop bp
     ret
 
-; ===== перевод строки =====
+
 _new_line:
     push bp
     mov bp, sp
@@ -120,28 +122,18 @@ _new_line:
     pop bp
     ret
 
-; ===== завершение с кодом =====
+
 _terminate:
     push bp
     mov bp, sp
-    mov al, 00h
+    mov al, [bp+arg1]      ; код ошибки передаётся в стеке
     mov ah, 4ch
     int 21h
     mov sp, bp
     pop bp
     ret
 
-_terminate_ok:
-    push bp
-    mov bp, sp
-    push 0
-    call _terminate
-    add sp, 2
-    mov sp, bp
-    pop bp
-    ret
 
-; ===== обработчики ошибок с выводом сообщения =====
 _err_general:
     push bp
     mov bp, sp
@@ -159,10 +151,7 @@ _err_divzero:
     mov ah, 9
     int 21h
     call _new_line
-    mov al, ERROR_DIV_ZERO
-    mov ah, 4ch
-    int 21h
-    mov sp, bp
+    mov byte ptr [error_code], ERROR_DIV_ZERO
     pop bp
     ret
 
@@ -174,10 +163,7 @@ _err_overflow:
     mov ah, 9
     int 21h
     call _new_line
-    mov al, INTEGER_OVERFLOW
-    mov ah, 4ch
-    int 21h
-    mov sp, bp
+    mov byte ptr [error_code], INTEGER_OVERFLOW
     pop bp
     ret
 
@@ -189,10 +175,7 @@ _err_format:
     mov ah, 9
     int 21h
     call _new_line
-    mov al, ERROR_FORMAT_MISMATCH
-    mov ah, 4ch
-    int 21h
-    mov sp, bp
+    mov byte ptr [error_code], ERROR_FORMAT_MISMATCH
     pop bp
     ret
 
@@ -204,10 +187,7 @@ _err_operator:
     mov ah, 9
     int 21h
     call _new_line
-    mov al, AN_UNACCEPTABLE_SIGN
-    mov ah, 4ch
-    int 21h
-    mov sp, bp
+    mov byte ptr [error_code], AN_UNACCEPTABLE_SIGN
     pop bp
     ret
 
@@ -219,14 +199,11 @@ _err_base:
     mov ah, 9
     int 21h
     call _new_line
-    mov al, ERROR_FORMAT_MISMATCH
-    mov ah, 4ch
-    int 21h
-    mov sp, bp
+    mov byte ptr [error_code], ERROR_FORMAT_MISMATCH
     pop bp
     ret
 
-; ===== преобразование шестнадцатеричной цифры =====
+
 _hex_digit:
     push cx
     mov cl, al
@@ -248,7 +225,7 @@ _nibble_digit:
     inc di
     ret
 
-; ===== преобразование 16-битного знакового в десятичную строку =====
+
 _int16_to_dec:
     push bp
     mov bp, sp
@@ -288,7 +265,7 @@ _i16d_done:
     pop bp
     ret
 
-; ===== преобразование 16-битного знакового в шестнадцатеричную строку =====
+
 _int16_to_hex:
     push bp
     mov bp, sp
@@ -313,7 +290,7 @@ _int16_to_hex:
     pop bp
     ret
 
-; ===== преобразование 32-битного знакового в десятичную строку =====
+
 _int32_to_dec:
     push bp
     mov bp, sp
@@ -376,7 +353,7 @@ _i32d_done:
     pop bp
     ret
 
-; ===== преобразование 32-битного знакового в шестнадцатеричную строку =====
+
 _int32_to_hex:
     push bp
     mov bp, sp
@@ -422,7 +399,7 @@ _whw_digit:
     pop cx
     ret
 
-; ===== проверка, является ли строка шестнадцатеричной =====
+
 _is_hex_str:
     push bp
     mov bp, sp
@@ -489,7 +466,7 @@ _ihs_end:
     pop bp
     ret
 
-; ===== преобразование строки в число (десятичное или hex) =====
+
 _str_to_int:
     push bp
     mov bp, sp
@@ -538,7 +515,6 @@ _sti_min_int:
     clc
     jmp _sti_done
 _sti_overflow:
-    mov ax, INTEGER_OVERFLOW
     call _err_overflow
     stc
 _sti_done:
@@ -547,7 +523,7 @@ _sti_done:
     pop bp
     ret
 
-; ===== преобразование шестнадцатеричной строки в число =====
+
 _hex_to_int:
     push bp
     mov bp, sp
@@ -582,9 +558,8 @@ _hti_accum:
     inc si
     jmp _hti_loop
 _hti_overflow:
-    mov ax, INTEGER_OVERFLOW
-    stc
     call _err_overflow
+    stc
     jmp _hti_end
 _hti_done:
     clc
@@ -595,7 +570,6 @@ _hti_end:
     pop bp
     ret
 
-; ===== преобразование десятичной строки в число =====
 _dec_to_int:
     push bp
     mov bp, sp
@@ -656,7 +630,6 @@ _dti_min_int:
     clc
     jmp _dti_end
 _dti_overflow:
-    mov ax, INTEGER_OVERFLOW
     call _err_overflow
     stc
 _dti_end:
@@ -666,7 +639,6 @@ _dti_end:
     pop bp
     ret
 
-; ===== проверка формата первого числа =====
 _validate_num1:
     push bp
     mov bp, sp
@@ -733,6 +705,9 @@ _v1_hex_valid:
     ret
 _v1_error:
     call _err_format
+    xor ax, ax
+    pop bx
+    pop si
     mov sp, bp
     pop bp
     ret
@@ -804,6 +779,9 @@ _v2_hex_valid:
     ret
 _v2_error:
     call _err_format
+    xor ax, ax
+    pop bx
+    pop si
     mov sp, bp
     pop bp
     ret
@@ -829,6 +807,7 @@ _select_base:
     je _sb_ok
 _sb_error:
     call _err_base
+    jmp _sb_exit
 _sb_ok:
     mov byte ptr [base_char], al
     ; вывод сообщения о выбранной базе
@@ -839,6 +818,7 @@ _sb_ok:
     mov ah, 2
     int 21h
     call _new_line
+_sb_exit:
     pop bp
     ret
 
@@ -916,22 +896,25 @@ _re_exit:
     pop bp
     ret
 
-; ===== вычисление =====
 _compute:
     push bp
     mov bp, sp
-    clc
+    mov byte ptr [error_code], 0      ; сброс кода ошибки
     call _validate_num1
+    cmp byte ptr [error_code], 0
+    jne _comp_error_exit
     push offset tmp_num1
     call _str_to_int
     add sp, 2
-    jc _comp_error
+    jc _comp_error_exit
     mov [operand1], ax
     call _validate_num2
+    cmp byte ptr [error_code], 0
+    jne _comp_error_exit
     push offset tmp_num2
     call _str_to_int
     add sp, 2
-    jc _comp_error
+    jc _comp_error_exit
     mov [operand2], ax
     mov ax, [operand1]
     mov bx, [operand2]
@@ -986,18 +969,23 @@ _comp_mod:
     jmp _comp_done
 _comp_divzero:
     call _err_divzero
+    jmp _comp_error_exit
 _comp_overflow:
     call _err_overflow
-_comp_error:
-    call _err_format
+    jmp _comp_error_exit
 _comp_op_error:
     call _err_operator
+    jmp _comp_error_exit
 _comp_done:
-    mov sp, bp
+    clc
+    pop bp
+    ret
+_comp_error_exit:
+    stc
     pop bp
     ret
 
-; ===== вывод результата =====
+
 _output_result:
     push bp
     mov bp, sp
@@ -1056,11 +1044,23 @@ start:
     mov ds, ax
     mov ax, stack
     mov ss, ax
+    mov byte ptr [error_code], 0
     call _select_base
+    cmp byte ptr [error_code], 0
+    jne _exit_with_error
     call _read_expr
+    cmp byte ptr [error_code], 0
+    jne _exit_with_error
     call _compute
+    cmp byte ptr [error_code], 0
+    jne _exit_with_error
     call _output_result
-    call _terminate_ok
+_exit_with_error:
+    mov al, [error_code]
+    xor ah, ah
+    push ax
+    call _terminate
+    add sp, 2
 
 code ends
 end start
